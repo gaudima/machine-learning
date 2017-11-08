@@ -1,6 +1,7 @@
 import os
 import math
 import numpy as np
+import matplotlib.pyplot as pyplt
 
 
 def load_samples(path, group):
@@ -12,74 +13,50 @@ def load_samples(path, group):
         if file_name.endswith(".txt"):
             with open(os.path.join(path, file_name)) as file:
                 data = file.read()
-                is_spam = False
+                is_spam = 0
                 if "spmsg" in file_name:
-                    is_spam = True
+                    is_spam = 1
                 words = list(map(int, data.split()[1:]))
-                samples.append({"data": words, "is_spam": is_spam, "max_word": max(words), "file_name": file_name})
+                samples.append({"data": words,
+                                "topic_len": len(data.split("\n")[0].split()[1:]),
+                                "class": is_spam,
+                                "max_word": max(words),
+                                "file_name": file_name})
     return samples
 
 
 def train(samples):
-    all_files = len(samples)
-    spam_files = 0
-    legit_files = 0
-    unique_words = 0
-    spam_words = 0
-    legit_words = 0
-    spam_word_count = {}
-    legit_word_count = {}
+    class_size = [0, 0]
+    word_count = {}
+    word_count_in_class = [0, 0]
+    unique_words = set()
     for sample in samples:
-        if sample["is_spam"]:
-            spam_words += len(sample["data"])
-            spam_files += 1
-        else:
-            legit_words += len(sample["data"])
-            legit_files += 1
-        unique_words = max(unique_words, sample["max_word"])
+        class_size[sample["class"]] += 1
+        unique_words.update(set(sample["data"]))
         for word in sample["data"]:
-            if sample["is_spam"]:
-                if word not in spam_word_count:
-                    spam_word_count[word] = 1
-                else:
-                    spam_word_count[word] += 1
-            else:
-                if word not in legit_word_count:
-                    legit_word_count[word] = 1
-                else:
-                    legit_word_count[word] += 1
-    return spam_files, legit_files, all_files, unique_words, spam_words, legit_words, spam_word_count, legit_word_count
+            if word not in word_count:
+                word_count[word] = [0, 0]
+            word_count[word][sample["class"]] += 1
+            word_count_in_class[sample["class"]] += 1
+    return class_size, word_count, word_count_in_class, len(unique_words)
 
 
-def classify(classifier, samples, blur_k, margin):
-    spam_files, legit_files, all_files, unique_words, \
-        spam_words, legit_words, spam_word_count, legit_word_count = classifier
-    classified = [(False, 0)] * len(samples)
-    for index, sample in enumerate(samples):
-        spam_log = math.log(spam_files / all_files)
-        legit_log = math.log(legit_files / all_files)
-        for word in sample["data"]:
-            spam_word_count1 = blur_k
-            if word in spam_word_count:
-                spam_word_count1 += spam_word_count[word]
-            legit_word_count1 = blur_k
-            if word in legit_word_count:
-                legit_word_count1 += legit_word_count[word]
-            if spam_word_count1 > 0:
-                spam_log += math.log(spam_word_count1 / (blur_k * unique_words + spam_words))
-            if legit_word_count1 > 0:
-                legit_log += math.log(legit_word_count1 / (blur_k * unique_words + legit_words))
-        try:
-            exp = math.exp(spam_log - legit_log)
-        except OverflowError:
-            exp = float("inf")
-        legit_probability = 1 / (1 + exp)
-        if 1 - legit_probability >= margin:
-        # if math.fabs(legit_log) / math.fabs(spam_log) > 1.1:
-            classified[index] = (True, 1 - legit_probability)
+def classify(classifier, sample, blur_k, margin):
+    class_size, word_count, word_count_in_class, unique_words = classifier
+    log_prob = [.0, .0]
+
+    for idx, word in enumerate(sample["data"]):
+        for i in range(2):
+            word_count_blured = blur_k
+            if word in word_count:
+                word_count_blured += word_count[word][i]
+            log_prob[i] -= math.log(word_count_blured / (blur_k * unique_words + word_count_in_class[i]))
+    for i in range(2):
+        log_prob[i] -= math.log(class_size[i]/(class_size[0] + class_size[1]))
+        if margin == -1:
+            return 1 if log_prob[1] < log_prob[0] else 0, log_prob[0], log_prob[1]
         else:
-            classified[index] = (False, 1 - legit_probability)
-    return classified
+            return 1 if log_prob[0] - log_prob[1] > margin else 0, log_prob[0] - log_prob[1]
 
 
 def load_all_samples():
@@ -88,28 +65,71 @@ def load_all_samples():
         samples.append(load_samples("pu1", i))
     return samples
 
+
+def avoid_zero_div(a, b):
+    if b == 0:
+        return 0.0
+    return a / b
+
+
+def calculate_score(classifier, test_data, blur_k, margin):
+    tp = 0
+    tn = 0
+    fp = 0
+    fn = 0
+    for sample in test_data:
+        classified = classify(classifier, sample, blur_k, margin)
+        class_id = sample["class"]
+        deduced_id = classified[0]
+        if class_id == deduced_id:
+            if class_id == 1:
+                tp += 1
+            else:
+                tn += 1
+        else:
+            if class_id == 1:
+                fp += 1
+            else:
+                fn += 1
+    precision = avoid_zero_div(tp, tp + fp)
+    recall = avoid_zero_div(tp, tp + fn)
+    specificity = avoid_zero_div(tn, tn + fp)
+    sensitivity = recall
+    tpr = tp / len(test_data)
+    fpr = fp / len(test_data)
+    tnr = tn / len(test_data)
+    fnr = fn / len(test_data)
+    return avoid_zero_div(2 * precision * recall, precision + recall), sensitivity, specificity, tpr, fpr, tnr, fnr
+
 samples = load_all_samples()
-min_error = 100
-min_blur_k = 0
-min_margin = 0
-for blur_k in range(0, 11):
-    for margin in np.arange(0.1, 1.1, 0.1):
-        cv_error = 0
-        for cv_on in range(1, len(samples)):
-            test_samples = samples[cv_on]
-            train_samples = []
-            for i in range(1, len(samples)):
-                if i != cv_on:
-                    train_samples.extend(samples[i])
-            classified = classify(train(train_samples), test_samples, blur_k, margin)
-            wrong_num = 0
-            for idx, sample in enumerate(test_samples):
-                if classified[idx][0] != sample["is_spam"]:
-                    wrong_num += 1
-            cv_error += wrong_num / len(test_samples)
-        if min_error > cv_error:
-            min_error = cv_error
-            min_blur_k = blur_k
-            min_margin = margin
-        print("cross-validation error: {:.2f}% | blur_k = {} | margin = {:.1f}".format(cv_error / 10 * 100, blur_k, margin))
-print("\nminimal error: {:.2f}% | blur_k = {} | margin = {:.1f}".format(min_error / 10 * 100, min_blur_k, min_margin))
+
+f1_avg = 0
+sen_avg = 0
+spe_avg = 0
+tpr_avg = 0
+tnr_avg = 0
+fnr_avg = 0
+fpr_avg = 0
+blur_k = 0.001
+for cv_on in range(len(samples)):
+    test_samples = samples[cv_on]
+    train_samples = []
+    for i in range(len(samples)):
+        if i != cv_on:
+            train_samples.extend(samples[i])
+    classifier = train(train_samples)
+    margin = 0
+    for sample in train_samples:
+        if sample["class"] == 0:
+            margin = max(margin, classify(classifier, sample, blur_k, 0)[1])
+    print("margin: ", margin)
+    f1, sen, spe, tpr, fpr, tnr, fnr = calculate_score(classifier, test_samples, blur_k, margin)
+    f1_avg += f1
+    sen_avg += sen
+    spe_avg += spe
+    tpr_avg += tpr
+    tnr_avg += tnr
+    fpr_avg += fpr
+    fnr_avg += fnr
+print("avg: f1:", f1_avg / 10, "sen:", sen_avg / 10, "1 - spe:", 1 - spe_avg / 10)
+print("avg: tpr:", tpr_avg / 10, "tnr:", tnr_avg / 10, "fpr:", fpr_avg / 10, "fnr:", fnr_avg / 10)
