@@ -88,24 +88,20 @@ def calculate_score(classifier, test_data, blur_k, margin):
                 tn += 1
         else:
             if class_id == 1:
-                fp += 1
-            else:
                 fn += 1
+            else:
+                fp += 1
+    tpr = avoid_zero_div(tp, tp + fn)
+    fpr = avoid_zero_div(fp, fp + tn)
+    tnr = avoid_zero_div(tn, tn + fp)
+    fnr = avoid_zero_div(fn, tp + fn)
     precision = avoid_zero_div(tp, tp + fp)
-    recall = avoid_zero_div(tp, tp + fn)
-    specificity = avoid_zero_div(tn, tn + fp)
-    sensitivity = recall
-    tpr = tp / len(test_data)
-    fpr = fp / len(test_data)
-    tnr = tn / len(test_data)
-    fnr = fn / len(test_data)
-    return avoid_zero_div(2 * precision * recall, precision + recall), sensitivity, specificity, tpr, fpr, tnr, fnr
+    recall = tpr
+    return avoid_zero_div(2 * precision * recall, precision + recall), tpr, fpr, tnr, fnr
 
 samples = load_all_samples()
 
 f1_avg = 0
-sen_avg = 0
-spe_avg = 0
 tpr_avg = 0
 tnr_avg = 0
 fnr_avg = 0
@@ -118,18 +114,16 @@ for cv_on in range(len(samples)):
         if i != cv_on:
             train_samples.extend(samples[i])
     classifier = train(train_samples)
-    margin = 0
+    margin = float("-inf")
     for sample in train_samples:
         if sample["class"] == 0:
             margin = max(margin, classify(classifier, sample, blur_k, 0)[1])
     print("margin: ", margin)
-    f1, sen, spe, tpr, fpr, tnr, fnr = calculate_score(classifier, test_samples, blur_k, margin)
+    f1, tpr, fpr, tnr, fnr = calculate_score(classifier, test_samples, blur_k, margin)
     f1_avg += f1
-    sen_avg += sen
-    spe_avg += spe
     tpr_avg += tpr
     tnr_avg += tnr
     fpr_avg += fpr
     fnr_avg += fnr
-print("avg: f1:", f1_avg / 10, "sen:", sen_avg / 10, "1 - spe:", 1 - spe_avg / 10)
-print("avg: tpr:", tpr_avg / 10, "tnr:", tnr_avg / 10, "fpr:", fpr_avg / 10, "fnr:", fnr_avg / 10)
+print("avg: f1:", f1_avg / 10)
+print("avg: tpr:", tpr_avg / 10, "fnr:", fnr_avg / 10, "tnr:", tnr_avg / 10, "fpr:", fpr_avg / 10)
