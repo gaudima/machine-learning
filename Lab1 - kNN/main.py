@@ -1,6 +1,7 @@
 from operator import itemgetter
 import math
 import matplotlib.pyplot as plt
+import matplotlib.markers as mrk
 from random import shuffle
 
 
@@ -14,11 +15,11 @@ def read_data(file):
 
 
 def split_for_cross_validation(data, step, steps):
-    train_set_len = int(math.ceil(len(data) / steps))
+    test_set_len = int(math.ceil(len(data) / steps))
     train_set = []
     test_set = []
     for i in range(len(data)):
-        if train_set_len * step <= i < train_set_len * (step + 1):
+        if test_set_len * step <= i < test_set_len * (step + 1):
             test_set.append(data[i])
         else:
             train_set.append(data[i])
@@ -26,14 +27,15 @@ def split_for_cross_validation(data, step, steps):
 
 
 def split_for_cross_validation2(data, step, steps):
-    train_set_len = int(math.ceil(len(data) / steps))
+    # test_set_len = len(data) // steps
     train_set = []
     test_set = []
     for i in range(len(data)):
-        if train_set_len * step <= i < train_set_len * (step + 1):
+        if i % steps == step:
             test_set.append(data[i])
         else:
             train_set.append(data[i])
+    print(len(train_set), len(test_set))
     return train_set, test_set
 
 
@@ -55,8 +57,8 @@ def no_weight(a, b):
     return 1
 
 
-def rev_dist(a, b):
-    return 1 / (e_dist(a, b) ** 2)
+def rev_exp_dist(a, b):
+    return math.exp(-6 * e_dist(a, b))
 
 
 def knn(train, test, k, dist, weight):
@@ -87,12 +89,6 @@ def get_labels(data):
     return [d['class'] for d in data]
 
 
-def compute_f1(tp, fp, fn):
-    precision = tp / (tp + fp)
-    recall = tp / (tp + fn)
-    return 2 * precision * recall / (precision + recall)
-
-
 def compute_rates(test, labeled):
     tp = 0  # is 1 classified as 1
     fp = 0  # is 0 classified as 1
@@ -113,11 +109,23 @@ def compute_rates(test, labeled):
     return tp, fp, tn, fn
 
 
+def compute_f1(tp, fp, fn):
+    precision = tp / (tp + fp)
+    recall = tp / (tp + fn)
+    return 2 * precision * recall / (precision + recall)
+
+
 def plot_data(data, data2, colors, colors2):
-    x = [d['x'] for d in data] + [d['x'] for d in data2]
-    y = [d['y'] for d in data] + [d['y'] for d in data2]
-    c = [colors[d['class']] for d in data] + [colors2[d['class']] for d in data2]
+    x = [d['x'] for d in data]
+    y = [d['y'] for d in data]
+    c = [colors[d['class']] for d in data]
     plt.scatter(x, y, c=c)
+
+    xc = [d['x'] for d in data2]
+    yc = [d['y'] for d in data2]
+    cc = [colors2[d['class']] for d in data2]
+    plt.scatter(xc, yc, c=cc, marker=mrk.MarkerStyle("+"))
+
     plt.show()
 
 
@@ -128,9 +136,11 @@ if __name__ == '__main__':
     tp_all = 0
     fp_all = 0
     fn_all = 0
+    labeled_all = []
     for step in range(steps):
-        train, test = split_for_cross_validation(data, step, steps)
-        labeled = knn(train, test, 1, e_dist, no_weight)
+        train, test = split_for_cross_validation2(data, step, steps)
+        labeled = knn(train, test, 3, e_dist, rev_exp_dist)
+        labeled_all += labeled
         print(get_labels(test))
         print(get_labels(labeled))
         print('----')
@@ -139,4 +149,4 @@ if __name__ == '__main__':
         fp_all += fp
         fn_all += fn
     print(compute_f1(tp_all, fp_all, fn_all))
-    # plot_data(train, labeled, ['#ff0000', '#00ff00'], ['#00ffff', '#ff00ff'])
+    plot_data(data, labeled_all, ['#ff0000', '#00ff00'], ['#ff0000', '#00ff00'])
