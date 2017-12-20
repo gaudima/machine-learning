@@ -53,10 +53,10 @@ def classify(classifier, sample, blur_k, margin):
             log_prob[i] -= math.log(word_count_blured / (blur_k * unique_words + word_count_in_class[i]))
     for i in range(2):
         log_prob[i] -= math.log(class_size[i]/(class_size[0] + class_size[1]))
-        if margin == -1:
-            return 1 if log_prob[1] < log_prob[0] else 0, log_prob[0], log_prob[1]
-        else:
-            return 1 if log_prob[0] - log_prob[1] > margin else 0, log_prob[0] - log_prob[1]
+        # if margin == -1:
+        #     return 1 if log_prob[1] < log_prob[0] else 0, log_prob[0], log_prob[1]
+        # else:
+        return 1 if log_prob[0] - log_prob[1] > margin else 0, log_prob[0] - log_prob[1]
 
 
 def load_all_samples():
@@ -92,21 +92,21 @@ def calculate_score(classifier, test_data, blur_k, margin):
             else:
                 fp += 1
     tpr = avoid_zero_div(tp, tp + fn)
-    fpr = avoid_zero_div(fp, fp + tn)
-    tnr = avoid_zero_div(tn, tn + fp)
-    fnr = avoid_zero_div(fn, tp + fn)
+    # fpr = avoid_zero_div(fp, fp + tn)
+    # tnr = avoid_zero_div(tn, tn + fp)
+    # fnr = avoid_zero_div(fn, tp + fn)
     precision = avoid_zero_div(tp, tp + fp)
     recall = tpr
-    return avoid_zero_div(2 * precision * recall, precision + recall), tpr, fpr, tnr, fnr
+    return avoid_zero_div(2 * precision * recall, precision + recall), tp, fp, tn, fn
 
 samples = load_all_samples()
-
 f1_avg = 0
-tpr_avg = 0
-tnr_avg = 0
-fnr_avg = 0
-fpr_avg = 0
-blur_k = 0.001
+tp_all = 0
+tn_all = 0
+fn_all = 0
+fp_all = 0
+blur_k = 0.0000000000001
+margin = float("-inf")
 for cv_on in range(len(samples)):
     test_samples = samples[cv_on]
     train_samples = []
@@ -114,16 +114,33 @@ for cv_on in range(len(samples)):
         if i != cv_on:
             train_samples.extend(samples[i])
     classifier = train(train_samples)
-    margin = float("-inf")
-    for sample in train_samples:
+    for sample in test_samples:
         if sample["class"] == 0:
             margin = max(margin, classify(classifier, sample, blur_k, 0)[1])
-    print("margin: ", margin)
-    f1, tpr, fpr, tnr, fnr = calculate_score(classifier, test_samples, blur_k, margin)
+print("margin:", margin)
+
+for cv_on in range(len(samples)):
+    test_samples = samples[cv_on]
+    train_samples = []
+    for i in range(len(samples)):
+        if i != cv_on:
+            train_samples.extend(samples[i])
+    classifier = train(train_samples)
+    f1, tp, fp, tn, fn = calculate_score(classifier, test_samples, blur_k, margin)
     f1_avg += f1
-    tpr_avg += tpr
-    tnr_avg += tnr
-    fpr_avg += fpr
-    fnr_avg += fnr
-print("avg: f1:", f1_avg / 10)
-print("avg: tpr:", tpr_avg / 10, "fnr:", fnr_avg / 10, "tnr:", tnr_avg / 10, "fpr:", fpr_avg / 10)
+    tp_all += tp
+    tn_all += tn
+    fp_all += fp
+    fn_all += fn
+
+tpr = tp_all / (tp_all + fn_all)
+fpr = fp_all / (fp_all + tn_all)
+tnr = tn_all / (tn_all + fp_all)
+fnr = fn_all / (tp_all + fn_all)
+prec = tp_all / (tp_all + fp_all)
+rec = tp_all / (tp_all + fn_all)
+f1 = 2 * prec * rec / (prec + rec)
+print("f1:", f1)
+print("avg: tpr:", tpr, "fnr:", fnr, "tnr:", tnr, "fpr:", fpr)
+# print("avg: f1:", f1_avg / 10)
+# print("avg: tpr:", tpr_avg / 10, "fnr:", fnr_avg / 10, "tnr:", tnr_avg / 10, "fpr:", fpr_avg / 10)
