@@ -58,7 +58,7 @@ def no_weight(a, b):
 
 
 def rev_exp_dist(a, b):
-    return math.exp(-6 * e_dist(a, b))
+    return math.exp(-2 * e_dist(a, b))
 
 
 def knn(train, test, k, dist, weight):
